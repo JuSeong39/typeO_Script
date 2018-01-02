@@ -1,9 +1,11 @@
 #!/bin/bash
+a=`ifconfig -a | grep wlx | awk '{print $1}'`
+echo "wireless interface name is : $a"
 
 if [    -n "ifconfig | grep br-AP"   ]
 then
 	ifconfig br-AP down
-	brctl delif br-AP veth1 && brctl delif br-AP wlx485d601fbca4
+	brctl delif br-AP veth1 && brctl delif br-AP $a
 	brctl delbr br-AP
 fi
 
@@ -54,11 +56,10 @@ ovs-vsctl add-br br-IoT
 ovs-vsctl add-port br-IoT veth2
 #Patching에 사용되는 Veth2를 Br-IoT에 연결
 ovs-vsctl add-port br-IoT eno3
-ovs-vsctl add-port br-IoT eno7
 ovs-vsctl add-port br-IoT eno4
 ovs-vsctl add-port br-IoT eno5
 ovs-vsctl add-port br-IoT eno6
-ovs-vsctl set-controller br-IoT tcp:210.114.90.174:6633
+ovs-vsctl set-controller br-IoT tcp:203.237.53.130:6633
 #Task 3-1 인프라 슬라이싱을 위해 해당 Bridge를 ONOS Controller에 연결
 echo -e "\novs switch setting\n"
 ovs-vsctl show
@@ -67,10 +68,11 @@ ovs-vsctl show
 
 brctl addbr br-AP
 #리눅스 Bridge 생성
-iw dev wlx485d601fbca4 set 4addr on
+iw dev $a set 4addr on
 #<wlx485d601fbca4>는 무선 인터페이스의 장치 이름으로 사이트마다 다름
 #해당 설정을 통해서 무선 인터페이스가 IPv4 주소를 가질 수 있도록 함
-brctl addif br-AP veth1 && sudo brctl addif br-AP wlx485d601fbca4
+brctl addif br-AP veth1 && sudo brctl addif br-AP $a
+ifconfig br-AP 192.168.50.80 up
 echo -e "\nlinux bridge seting\n"
 #무선 인터페이스와 Veth1를 Br-AP에 연결
 
@@ -81,13 +83,13 @@ ifconfig br-IoT up
 ifconfig | grep br-AP
 ifconfig | grep br-IoT
 
-sed -i 's/no-resolv/no-resolv/g' /etc/dnsmasq.conf
-sed -i 's/dhcp-range=interface:wlx485d601fbca4,192.168.50.81,192.168.55.99,12h/dhcp-range=wlx485d601fbca4,192.168.50.81,192.168.88.99,12h/g' /etc/dnsmasq.conf
-sed -i 's/server=8.8.8.8/server=8.8.8.8/g' /etc/dnsmasq.conf
+echo -e "no-resolv/no-resolv">> /etc/dnsmasq.conf
+echo -e "dhcp-range=interface:$a,192.168.50.81,192.168.55.99,12h">> /etc/dnsmasq.conf
+echo -e "server=8.8.8.8">> /etc/dnsmasq.conf
 #dnsmasq(DHCP 서버)의 설정 파일
 #DHCP IP pool은 Data Plane으로 여러 사이트에서 동시에 통신하는 상황을 고려 겹치지 않도록 설정 완료
 
-echo -e "interface=wlx485d601fbca4
+echo -e "interface=$a
 #bridge=br-AP
 driver=nl80211
 ssid=typeO_GIST
@@ -105,3 +107,18 @@ rsn_pairwise=CCMP"> ~/hostapd.conf
 #Interface의 이름은 위에서 사이트 마다 다름
 #AP의 SSID 역시 사이트마다 다르게 설정 완료
 
+echo -e " ifconfig $a up
+ip link add name veth1 type veth peer name veth2
+ifconfig veth1 up
+ifconfig veth2 up
+brctl addbr br-AP
+ifconfig br-AP 192.168.50.80  netmask 255.255.255.0 up
+ifconfig br-IoT  netmask 255.255.255.0 up
+brctl addif br-AP veth1
+iw dev $a set 4addr on
+brctl addif br-AP $a
+ifconfig eno2 up
+ifconfig eno3 up
+ifconfig eno4 up
+ifconfig eno5 up
+ifconfig eno6 up">> /etc/rc.local
